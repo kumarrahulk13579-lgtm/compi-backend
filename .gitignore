@@ -16,6 +16,9 @@ db/migrations/versions/
 # uv
 .python-version
 
+# Notes
+.notes/
+
 # IDE
 .vscode/
 .idea/
