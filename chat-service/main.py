@@ -5,8 +5,17 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from fastapi import FastAPI
+from contextlib import asynccontextmanager
 from routes import router
+import tool_registry
 
-app = FastAPI()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    tool_registry.register_all_tools()
+    yield
+
+
+app = FastAPI(lifespan=lifespan)
 
 app.include_router(router, prefix="/chat")

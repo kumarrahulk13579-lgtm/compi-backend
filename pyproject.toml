@@ -17,4 +17,5 @@ dependencies = [
     "anthropic",
     "openai",
     "redis",
+    "pgvector",
 ]

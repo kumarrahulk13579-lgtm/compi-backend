@@ -47,12 +47,27 @@ def _haiku_model():
     return HAIKU_MODEL
 
 
+def _split_system(messages: list) -> tuple[str, list]:
+    """Anthropic requires system prompt as separate param, not in messages."""
+    system = ""
+    rest = []
+    for m in messages:
+        if m.get("role") == "system":
+            system += m["content"]
+        else:
+            rest.append(m)
+    return system, rest
+
+
 def call(messages: list, tools: list = None, model: str = None) -> dict:
     model = model or _main_model()
 
     if PROVIDER == "anthropic":
         client = _get_anthropic()
+        system, messages = _split_system(messages)
         kwargs = {"model": model, "max_tokens": 4096, "messages": messages}
+        if system:
+            kwargs["system"] = system
         if tools:
             kwargs["tools"] = tools
         response = client.messages.create(**kwargs)
@@ -92,36 +107,73 @@ def call(messages: list, tools: list = None, model: str = None) -> dict:
         }
 
 
+def format_tools(tools: list[dict]) -> list:
+    """Convert our tool format to the current provider's expected format."""
+    if PROVIDER == "anthropic":
+        return [
+            {"name": t["name"], "description": t["description"], "input_schema": t["parameters"]}
+            for t in tools
+        ]
+    else:
+        return [
+            {"type": "function", "function": {"name": t["name"], "description": t["description"], "parameters": t["parameters"]}}
+            for t in tools
+        ]
+
+
 def stream(messages: list, tools: list = None, model: str = None) -> Generator:
     model = model or _main_model()
 
     if PROVIDER == "anthropic":
         client = _get_anthropic()
+        system, messages = _split_system(messages)
         kwargs = {"model": model, "max_tokens": 4096, "messages": messages}
+        if system:
+            kwargs["system"] = system
         if tools:
             kwargs["tools"] = tools
+        final = None
         with client.messages.stream(**kwargs) as s:
             for text in s.text_stream:
                 yield {"type": "content", "token": text}
-            usage = s.get_final_message().usage
-            yield {
-                "type": "usage",
-                "input_tokens": usage.input_tokens,
-                "output_tokens": usage.output_tokens,
-                "model": model,
-                "cost_usd": calculate_cost(model, usage.input_tokens, usage.output_tokens),
-            }
+            final = s.get_final_message()
+        for block in final.content:
+            if block.type == "tool_use":
+                yield {"type": "tool_call", "id": block.id, "name": block.name, "params": block.input}
+        usage = final.usage
+        yield {
+            "type": "usage",
+            "input_tokens": usage.input_tokens,
+            "output_tokens": usage.output_tokens,
+            "model": model,
+            "cost_usd": calculate_cost(model, usage.input_tokens, usage.output_tokens),
+        }
 
     else:
+        import json as _json
         client = _get_openai(azure=(PROVIDER == "azure"))
         kwargs = {"model": model, "messages": messages, "stream": True, "stream_options": {"include_usage": True}}
         if tools:
             kwargs["tools"] = tools
+        accumulated_tool_calls: dict[int, dict] = {}
         for chunk in client.chat.completions.create(**kwargs):
             delta = chunk.choices[0].delta if chunk.choices else None
             if delta and delta.content:
                 yield {"type": "content", "token": delta.content}
+            if delta and delta.tool_calls:
+                for tc in delta.tool_calls:
+                    idx = tc.index
+                    if idx not in accumulated_tool_calls:
+                        accumulated_tool_calls[idx] = {"id": "", "name": "", "args": ""}
+                    if tc.id:
+                        accumulated_tool_calls[idx]["id"] = tc.id
+                    if tc.function and tc.function.name:
+                        accumulated_tool_calls[idx]["name"] += tc.function.name
+                    if tc.function and tc.function.arguments:
+                        accumulated_tool_calls[idx]["args"] += tc.function.arguments
             if chunk.usage:
+                for tc in accumulated_tool_calls.values():
+                    yield {"type": "tool_call", "id": tc["id"], "name": tc["name"], "params": _json.loads(tc["args"] or "{}")}
                 yield {
                     "type": "usage",
                     "input_tokens": chunk.usage.prompt_tokens,

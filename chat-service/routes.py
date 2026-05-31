@@ -1,9 +1,11 @@
 from fastapi import APIRouter, Depends
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from models import get_db
 from middleware import verify_token
 import controller
+import agent
 
 router = APIRouter()
 
@@ -27,8 +29,11 @@ def get_conversations(db: Session = Depends(get_db), token: dict = Depends(verif
 
 
 @router.post("/conversations/{conversation_id}/messages")
-def send_message(conversation_id: int, body: MessageRequest, db: Session = Depends(get_db), token: dict = Depends(verify_token)):
-    return controller.send_message(conversation_id, int(token["sub"]), body.content, db)
+def send_message(conversation_id: int, body: MessageRequest, token: dict = Depends(verify_token)):
+    return StreamingResponse(
+        agent.run(body.content, conversation_id, int(token["sub"])),
+        media_type="text/event-stream",
+    )
 
 
 @router.get("/conversations/{conversation_id}/messages")

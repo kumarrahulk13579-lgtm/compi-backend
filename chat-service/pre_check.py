@@ -5,9 +5,9 @@ SYSTEM_PROMPT = """You are a request analyzer. Given a user message and conversa
 
 Determine:
 1. complexity:
-   - "simple" if Claude can answer from its training data or conversation history alone (greetings, explanations, follow-ups)
-   - "medium" if it needs tools but no multi-step planning (search web, analyze a file, calculate)
-   - "complex" if it needs a multi-step plan with multiple distinct tasks (research + analyze + write report)
+   - "simple" if Claude can answer entirely on its own using training data or conversation history — no external data, no actions, no tools needed
+   - "medium" if Claude cannot answer alone and needs a tool or external data to complete the request — anything requiring real-time data, external systems, user files, or actions in the world, but achievable in one step
+   - "complex" if completing the request requires multiple distinct steps or tools that depend on each other — plan first, then execute each part separately
 2. needs_summary: true if token_count > 3000, else false
 
 Output format (JSON only, no extra text):
