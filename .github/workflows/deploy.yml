@@ -1,0 +1,57 @@
+name: Build and Push Images
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    name: Build and push Docker images
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Log in to ghcr.io
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push auth-service
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: auth-service/Dockerfile
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/compi-auth:latest
+          cache-from: type=gha,scope=auth
+          cache-to: type=gha,scope=auth,mode=max
+
+      - name: Build and push chat-service
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: chat-service/Dockerfile
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/compi-chat:latest
+          cache-from: type=gha,scope=chat
+          cache-to: type=gha,scope=chat,mode=max
+
+      - name: Build and push gateway-service
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: gateway-service/Dockerfile
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/compi-gateway:latest
+          cache-from: type=gha,scope=gateway
+          cache-to: type=gha,scope=gateway,mode=max

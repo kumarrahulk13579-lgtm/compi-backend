@@ -1,0 +1,24 @@
+# Environment
+.env
+*.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+env/
+
+# Alembic
+db/migrations/versions/
+
+# uv
+.python-version
+
+# Notes
+.notes/
+
+# IDE
+.vscode/
+.idea/

@@ -1,0 +1,21 @@
+[project]
+name = "compi-backend"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi",
+    "uvicorn",
+    "sqlalchemy",
+    "alembic",
+    "psycopg2-binary",
+    "python-dotenv",
+    "pyjwt",
+    "bcrypt",
+    "authlib",
+    "httpx",
+    "itsdangerous",
+    "anthropic",
+    "openai",
+    "redis",
+    "pgvector",
+]

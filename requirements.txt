@@ -1,0 +1,15 @@
+fastapi
+uvicorn[standard]
+sqlalchemy
+alembic
+psycopg2-binary
+python-dotenv
+pyjwt
+bcrypt
+authlib
+httpx
+itsdangerous
+anthropic
+openai
+redis
+pgvector
