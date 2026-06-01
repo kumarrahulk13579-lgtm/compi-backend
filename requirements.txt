@@ -1,5 +1,5 @@
 fastapi
-uvicorn
+uvicorn[standard]
 sqlalchemy
 alembic
 psycopg2-binary
@@ -9,3 +9,7 @@ bcrypt
 authlib
 httpx
 itsdangerous
+anthropic
+openai
+redis
+pgvector

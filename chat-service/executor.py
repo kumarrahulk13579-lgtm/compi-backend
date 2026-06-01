@@ -4,7 +4,7 @@ import llm_client
 import tool_registry
 
 PROVIDER = os.getenv("LLM_PROVIDER", "anthropic")
-MAX_ITERATIONS = 10
+MAX_ITERATIONS = 5
 
 
 def _assistant_msg(content: str, tool_calls: list) -> dict:
@@ -46,7 +46,7 @@ def run(messages: list, tools: list, tracer=None):
     """Agentic loop. Yields SSE-style event dicts. Streams LLM tokens to user."""
     formatted_tools = llm_client.format_tools(tools) if tools else None
 
-    for _ in range(MAX_ITERATIONS):
+    for iteration in range(MAX_ITERATIONS):
         content_buffer = []
         tool_calls = []
 
@@ -67,9 +67,15 @@ def run(messages: list, tools: list, tracer=None):
         full_content = "".join(content_buffer)
         messages.append(_assistant_msg(full_content, tool_calls))
 
+        # Emit one status event listing all tools being called in parallel
+        tool_names = [tc["name"] for tc in tool_calls]
+        if len(tool_names) == 1:
+            yield {"type": "status", "message": f"Using {tool_names[0]}..."}
+        else:
+            yield {"type": "status", "message": f"Using {', '.join(tool_names)}..."}
+
         results = []
         for tc in tool_calls:
-            yield {"type": "status", "message": f"Using {tc['name']}..."}
             handler = tool_registry.get_handler(tc["name"])
             if handler:
                 result = handler(tc["params"], {})
@@ -80,3 +86,12 @@ def run(messages: list, tools: list, tracer=None):
                 tracer.log(f"tool:{tc['name']}", input=tc["params"], output=result)
 
         messages.extend(_tool_result_msgs(tool_calls, results))
+    else:
+        # MAX_ITERATIONS hit — force a final answer with no tools
+        for event in llm_client.stream(messages, tools=None):
+            if event["type"] == "content":
+                yield event
+            elif event["type"] == "usage":
+                if tracer:
+                    tracer.log("llm_final", cost_usd=event.get("cost_usd"))
+                yield event
