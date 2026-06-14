@@ -117,14 +117,29 @@ def run(message: str, conversation_id: int, user_id: int):
 
         all_tool_names = list(active_tools)
         step_results = []
+        results_by_num = {}  # step_number -> result text, for dependency lookup
 
-        for i, (step_id, step_desc) in enumerate(step_infos):
+        for i, (step_id, step_num, step_desc, deps) in enumerate(step_infos):
             yield emit({"type": "status", "message": f"Step {i + 1} of {len(step_infos)}: {step_desc}"})
 
             step_tools = _get_tools(step_desc, active_tools, tracer)
             all_tool_names.extend(t["name"] for t in step_tools if t["name"] not in all_tool_names)
 
-            step_messages = messages + [{"role": "user", "content": step_desc}]
+            # Inject only the results this step declared a dependency on
+            context_parts = [
+                f"Result of step {d}:\n{results_by_num[d]}"
+                for d in deps if d in results_by_num
+            ]
+            if context_parts:
+                step_input = (
+                    "Context from previous steps:\n\n"
+                    + "\n\n".join(context_parts)
+                    + f"\n\nNow do this step:\n{step_desc}"
+                )
+            else:
+                step_input = step_desc
+
+            step_messages = messages + [{"role": "user", "content": step_input}]
             step_content = []
             for event in executor.run(step_messages, tools=step_tools, tracer=tracer):
                 if event["type"] == "content":
@@ -132,11 +147,12 @@ def run(message: str, conversation_id: int, user_id: int):
 
             step_result = "".join(step_content)
             step_results.append(step_result)
+            results_by_num[step_num] = step_result
             planner_mod.complete_step(step_id, step_result)
 
         yield emit({"type": "status", "message": "Synthesizing results..."})
 
-        for event in planner_mod.synthesize(message, [s for _, s in step_infos], step_results, messages):
+        for event in planner_mod.synthesize(message, [d for _, _, d, _ in step_infos], step_results, messages):
             if event["type"] == "content":
                 assistant_content_buffer.append(event["token"])
             yield emit(event)
