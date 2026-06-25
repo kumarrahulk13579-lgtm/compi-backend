@@ -15,8 +15,11 @@ if config.config_file_name is not None:
 target_metadata = Base.metadata
 
 database_url = os.getenv("DATABASE_URL")
-if database_url:
-    config.set_main_option("sqlalchemy.url", database_url)
+if not database_url:
+    raise RuntimeError(
+        "DATABASE_URL is not set. Set it in the environment before running migrations."
+    )
+config.set_main_option("sqlalchemy.url", database_url)
 
 
 def run_migrations_offline():
