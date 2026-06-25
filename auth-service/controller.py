@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 import bcrypt
 from sqlalchemy.orm import Session
 from fastapi import HTTPException, status
+from fastapi.responses import RedirectResponse
 from authlib.integrations.starlette_client import OAuth
 
 from db.models.user import User
@@ -85,4 +86,6 @@ async def google_callback(request, db: Session):
         db.add(identity)
         db.commit()
 
-    return {"token": create_token(identity.user_id)}
+    token_str = create_token(identity.user_id)
+    frontend_url = os.getenv("FRONTEND_URL", "http://localhost:5173")
+    return RedirectResponse(url=f"{frontend_url}/auth/callback?token={token_str}")

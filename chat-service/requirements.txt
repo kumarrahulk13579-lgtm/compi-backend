@@ -1,0 +1,13 @@
+fastapi
+uvicorn[standard]
+sqlalchemy
+psycopg2-binary
+python-dotenv
+anthropic
+openai
+redis
+httpx
+tavily-python
+pgvector
+pyjwt
+alembic

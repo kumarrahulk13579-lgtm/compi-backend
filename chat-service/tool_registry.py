@@ -74,7 +74,7 @@ def register_all_tools():
 
             existing = db.query(Tool).filter(Tool.name == name).first()
 
-            if existing and existing.description_hash == desc_hash:
+            if existing and existing.description_hash == desc_hash and existing.embedding is not None:
                 _handlers[name] = item["handler"]
                 continue
 

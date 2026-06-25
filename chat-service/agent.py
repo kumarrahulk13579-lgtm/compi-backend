@@ -12,6 +12,7 @@ import pre_check
 import tool_check
 import tool_registry
 import executor
+import planner as planner_mod
 import session as session_store
 import tracer as tracer_mod
 import summarizer
@@ -107,17 +108,57 @@ def run(message: str, conversation_id: int, user_id: int):
 
         session_store.update_fixed(conversation_id, {"active_tools": tool_names})
 
-    # 4. Complex — TODO: planner + per-step execution + synthesizer
+    # 4. Complex — planner + per-step execution + synthesizer
     elif complexity == "complex":
         yield emit({"type": "status", "message": "Planning your request..."})
-        # For now fall back to medium flow
-        tools = _get_tools(message, active_tools, tracer)
-        messages.append({"role": "user", "content": message})
 
-        for event in executor.run(messages, tools=tools, tracer=tracer):
+        steps = planner_mod.generate_steps(message)
+        plan_id, step_infos = planner_mod.create_plan(conversation_id, user_id, message, steps)
+
+        all_tool_names = list(active_tools)
+        step_results = []
+        results_by_num = {}  # step_number -> result text, for dependency lookup
+
+        for i, (step_id, step_num, step_desc, deps) in enumerate(step_infos):
+            yield emit({"type": "status", "message": f"Step {i + 1} of {len(step_infos)}: {step_desc}"})
+
+            step_tools = _get_tools(step_desc, active_tools, tracer)
+            all_tool_names.extend(t["name"] for t in step_tools if t["name"] not in all_tool_names)
+
+            # Inject only the results this step declared a dependency on
+            context_parts = [
+                f"Result of step {d}:\n{results_by_num[d]}"
+                for d in deps if d in results_by_num
+            ]
+            if context_parts:
+                step_input = (
+                    "Context from previous steps:\n\n"
+                    + "\n\n".join(context_parts)
+                    + f"\n\nNow do this step:\n{step_desc}"
+                )
+            else:
+                step_input = step_desc
+
+            step_messages = messages + [{"role": "user", "content": step_input}]
+            step_content = []
+            for event in executor.run(step_messages, tools=step_tools, tracer=tracer):
+                if event["type"] == "content":
+                    step_content.append(event["token"])
+
+            step_result = "".join(step_content)
+            step_results.append(step_result)
+            results_by_num[step_num] = step_result
+            planner_mod.complete_step(step_id, step_result)
+
+        yield emit({"type": "status", "message": "Synthesizing results..."})
+
+        for event in planner_mod.synthesize(message, [d for _, _, d, _ in step_infos], step_results, messages):
             if event["type"] == "content":
                 assistant_content_buffer.append(event["token"])
             yield emit(event)
+
+        planner_mod.complete_plan(plan_id)
+        session_store.update_fixed(conversation_id, {"active_tools": all_tool_names})
 
     yield emit({"type": "done"})
 

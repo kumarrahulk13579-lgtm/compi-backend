@@ -19,6 +19,19 @@ services:
     ports:
       - "6379:6379"
 
+  migrate:
+    build:
+      context: .
+      dockerfile: chat-service/Dockerfile
+    command: ["sh", "-c", "cd /app && PYTHONPATH=/app alembic upgrade head"]
+    env_file:
+      - chat-service/.env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   auth-service:
     build:
       context: .
@@ -27,11 +40,17 @@ services:
       - "8001:8001"
     env_file:
       - auth-service/.env
+    environment:
+      UVICORN_HOST: 0.0.0.0
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      REDIS_URL: redis://redis:6379
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_started
+      migrate:
+        condition: service_completed_successfully
 
   chat-service:
     build:
@@ -41,11 +60,17 @@ services:
       - "8002:8002"
     env_file:
       - chat-service/.env
+    environment:
+      UVICORN_HOST: 0.0.0.0
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      REDIS_URL: redis://redis:6379
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_started
+      migrate:
+        condition: service_completed_successfully
 
   gateway:
     build:
@@ -54,6 +79,7 @@ services:
     ports:
       - "8000:8000"
     environment:
+      UVICORN_HOST: 0.0.0.0
       AUTH_SERVICE_URL: http://auth-service:8001
       CHAT_SERVICE_URL: http://chat-service:8002
     depends_on:
