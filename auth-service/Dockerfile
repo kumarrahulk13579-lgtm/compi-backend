@@ -9,4 +9,4 @@ COPY db/ db/
 COPY auth-service/ auth-service/
 
 WORKDIR /app/auth-service
-CMD ["sh", "-c", "PYTHONPATH=/app uvicorn main:app --host 0.0.0.0 --port 8001"]
+CMD ["sh", "-c", "PYTHONPATH=/app uvicorn main:app --host ${UVICORN_HOST:-::} --port 8001"]

@@ -41,6 +41,7 @@ services:
     env_file:
       - auth-service/.env
     environment:
+      UVICORN_HOST: 0.0.0.0
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       REDIS_URL: redis://redis:6379
     depends_on:
@@ -60,6 +61,7 @@ services:
     env_file:
       - chat-service/.env
     environment:
+      UVICORN_HOST: 0.0.0.0
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       REDIS_URL: redis://redis:6379
     depends_on:
@@ -77,6 +79,7 @@ services:
     ports:
       - "8000:8000"
     environment:
+      UVICORN_HOST: 0.0.0.0
       AUTH_SERVICE_URL: http://auth-service:8001
       CHAT_SERVICE_URL: http://chat-service:8002
     depends_on:

@@ -10,4 +10,4 @@ COPY db/ db/
 COPY chat-service/ chat-service/
 
 WORKDIR /app/chat-service
-CMD ["sh", "-c", "PYTHONPATH=/app uvicorn main:app --host 0.0.0.0 --port 8002"]
+CMD ["sh", "-c", "PYTHONPATH=/app uvicorn main:app --host ${UVICORN_HOST:-::} --port 8002"]
