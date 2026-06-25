@@ -23,8 +23,10 @@ async def _fetch_openapi(url: str) -> dict | None:
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
             r = await client.get(f"{url}/openapi.json")
+            print(f"[gateway] fetched {url}/openapi.json -> {r.status_code}", flush=True)
             return r.json()
-    except Exception:
+    except Exception as e:
+        print(f"[gateway] FAILED to fetch {url}/openapi.json: {type(e).__name__}: {e}", flush=True)
         return None
 
 
