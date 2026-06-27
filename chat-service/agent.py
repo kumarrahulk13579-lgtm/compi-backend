@@ -17,6 +17,7 @@ import session as session_store
 import tracer as tracer_mod
 import summarizer
 import memory as memory_store
+import spend
 
 SYSTEM_PROMPT = "You are a helpful assistant."
 
@@ -49,12 +50,12 @@ def _get_tools(message: str, active_tools: list, tracer) -> list:
     return [{"name": t.name, "description": t.description, "parameters": t.parameters} for t in found]
 
 
-def run(message: str, conversation_id: int, user_id: int):
+def run(message: str, conversation_id: int, user_id: int, is_registered: bool = False):
     """Main agent entry point. Yields SSE-formatted strings."""
     def emit(event: dict) -> str:
         return f"data: {json.dumps(event)}\n\n"
 
-    tracer = tracer_mod.new_trace(conversation_id=conversation_id, user_id=user_id)
+    tracer = tracer_mod.new_trace(conversation_id=conversation_id, user_id=user_id, is_registered=is_registered)
     assistant_content_buffer = []
 
     db = SessionLocal()
@@ -112,14 +113,22 @@ def run(message: str, conversation_id: int, user_id: int):
     elif complexity == "complex":
         yield emit({"type": "status", "message": "Planning your request..."})
 
-        steps = planner_mod.generate_steps(message)
+        steps = planner_mod.generate_steps(message, tracer)
         plan_id, step_infos = planner_mod.create_plan(conversation_id, user_id, message, steps)
 
         all_tool_names = list(active_tools)
         step_results = []
         results_by_num = {}  # step_number -> result text, for dependency lookup
 
+        limit_hit = False
         for i, (step_id, step_num, step_desc, deps) in enumerate(step_infos):
+            # Re-check the cap between steps so a complex turn can't blow far past it.
+            allowed, info = spend.check_allowed(user_id, is_registered)
+            if not allowed:
+                yield emit({"type": "limit_exceeded", "scope": info.get("scope"), "message": info.get("message")})
+                limit_hit = True
+                break
+
             yield emit({"type": "status", "message": f"Step {i + 1} of {len(step_infos)}: {step_desc}"})
 
             step_tools = _get_tools(step_desc, active_tools, tracer)
@@ -150,15 +159,16 @@ def run(message: str, conversation_id: int, user_id: int):
             results_by_num[step_num] = step_result
             planner_mod.complete_step(step_id, step_result)
 
-        yield emit({"type": "status", "message": "Synthesizing results..."})
+        if not limit_hit:
+            yield emit({"type": "status", "message": "Synthesizing results..."})
 
-        for event in planner_mod.synthesize(message, [d for _, _, d, _ in step_infos], step_results, messages):
-            if event["type"] == "content":
-                assistant_content_buffer.append(event["token"])
-            yield emit(event)
+            for event in planner_mod.synthesize(message, [d for _, _, d, _ in step_infos], step_results, messages, tracer):
+                if event["type"] == "content":
+                    assistant_content_buffer.append(event["token"])
+                yield emit(event)
 
-        planner_mod.complete_plan(plan_id)
-        session_store.update_fixed(conversation_id, {"active_tools": all_tool_names})
+            planner_mod.complete_plan(plan_id)
+            session_store.update_fixed(conversation_id, {"active_tools": all_tool_names})
 
     yield emit({"type": "done"})
 
