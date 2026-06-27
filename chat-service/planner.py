@@ -50,10 +50,12 @@ def _normalize_steps(raw: list) -> list[dict]:
     return steps
 
 
-def generate_steps(goal: str) -> list[dict]:
+def generate_steps(goal: str, tracer=None) -> list[dict]:
     response = llm_client.call_haiku([
         {"role": "user", "content": f"{PLAN_PROMPT}\n\nRequest: {goal}"}
     ])
+    if tracer:
+        tracer.log("plan_generate", cost_usd=response.get("usage", {}).get("cost_usd"))
     try:
         data = json.loads(_strip_fences(response["content"]))
         steps = _normalize_steps(data.get("steps", []))
@@ -112,7 +114,7 @@ def complete_plan(plan_id: int):
         db.close()
 
 
-def synthesize(goal: str, steps: list[str], results: list[str], messages: list):
+def synthesize(goal: str, steps: list[str], results: list[str], messages: list, tracer=None):
     """Stream a synthesized final answer from all step results."""
     step_summary = "\n\n".join(
         f"Step {i + 1}: {step}\nResult: {result}"
@@ -128,4 +130,7 @@ def synthesize(goal: str, steps: list[str], results: list[str], messages: list):
             ),
         }
     ]
-    yield from llm_client.stream(synth_messages)
+    for event in llm_client.stream(synth_messages):
+        if event["type"] == "usage" and tracer:
+            tracer.log("synthesize", cost_usd=event.get("cost_usd"))
+        yield event
