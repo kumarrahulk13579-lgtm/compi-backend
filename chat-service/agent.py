@@ -18,9 +18,48 @@ import tracer as tracer_mod
 import summarizer
 import memory as memory_store
 import spend
+import llm_client
 
 SYSTEM_PROMPT = "You are a helpful assistant."
 
+MAX_TITLE_LEN = 60
+TITLE_PROMPT = (
+    "Generate a short, descriptive title (3 to 6 words) for a conversation that "
+    "starts with the message below. Reply with ONLY the title text: no quotes, "
+    "no surrounding punctuation, no preamble.\n\nMessage:\n{msg}"
+)
+
+
+def _sanitize_title(raw: str, fallback_src: str) -> str:
+    title = " ".join((raw or "").split()).strip().strip('"').strip("'")
+    if not title or len(title.split()) > 12:
+        title = " ".join((fallback_src or "").split())
+    return title[:MAX_TITLE_LEN].rstrip() or "New chat"
+
+
+def _generate_title(message: str) -> str:
+    try:
+        resp = llm_client.call_haiku(
+            [{"role": "user", "content": TITLE_PROMPT.format(msg=message[:1000])}]
+        )
+        return _sanitize_title(resp.get("content", ""), message)
+    except Exception:
+        return _sanitize_title("", message)
+
+
+def _title_worker(conversation_id: int, message: str, holder: dict):
+    title = _generate_title(message)
+    holder["title"] = title
+    db = SessionLocal()
+    try:
+        conv = db.query(Conversation).filter_by(id=conversation_id).first()
+        if conv:
+            conv.title = title
+            db.commit()
+    except Exception:
+        db.rollback()
+    finally:
+        db.close()
 
 
 def _save_messages(conversation_id: int, user_content: str, assistant_content: str):
@@ -63,6 +102,15 @@ def run(message: str, conversation_id: int, user_id: int, is_registered: bool = 
         history, token_count = summarizer.load_history(conversation_id, db)
     finally:
         db.close()
+
+    is_first_turn = not history
+    title_holder = {}
+    title_thread = None
+    if is_first_turn:
+        title_thread = threading.Thread(
+            target=_title_worker, args=(conversation_id, message, title_holder), daemon=True
+        )
+        title_thread.start()
 
     # 1. Pre-check
     with tracer_mod.timed(tracer, "pre_check", input={"message": message, "token_count": token_count}) as t:
@@ -169,6 +217,11 @@ def run(message: str, conversation_id: int, user_id: int, is_registered: bool = 
 
             planner_mod.complete_plan(plan_id)
             session_store.update_fixed(conversation_id, {"active_tools": all_tool_names})
+
+    if title_thread is not None:
+        title_thread.join(timeout=3)
+        if title_holder.get("title"):
+            yield emit({"type": "title", "title": title_holder["title"]})
 
     yield emit({"type": "done"})
 
